@@ -1,0 +1,26 @@
+[1..1] GraphLibrary
+	constraints :
+		exists(Algorithm.exists(MST)) implies (exists(EdgeType.exists(Undirected)) and exists(Weighted));
+		exists(Algorithm.exists(Cycle)) implies exists(EdgeType.exists(Directed));
+	group [1..4]:
+		[1..1] EdgeType
+			group [0..1]: {
+				[0..1] Directed
+				[0..1] Undirected
+			}
+		[0..1] Search
+			group [0..1]: {
+				[0..1] BFS
+				[0..1] DFS
+			}
+		[0..1] Weighted
+		[0..1] Algorithm
+			group [1..4]:
+				[0..1] Cycle
+				[0..1] ShortestPath
+				[0..1] MST
+					group [1..1]: {
+						[0..1] Prim
+						[0..1] Kruskal
+					}
+				[0..1] Transpose

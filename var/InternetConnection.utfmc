@@ -1,0 +1,8 @@
+InternetConnection : InternetConnection1
+  attributes:
+    option = false;
+    connectionName = "Example Connection";
+  group:
+    Wireless : Wireless1
+      attributes:
+        price = 205

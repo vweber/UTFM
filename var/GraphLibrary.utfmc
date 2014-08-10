@@ -1,0 +1,12 @@
+GraphLibrary : GraphLibrary1
+	group:
+		EdgeType : EdgeType1
+			group: {
+				Undirected : Undirected1
+			}
+		Weighted : Weighted1
+		Algorithm : Algorithm1
+			group:
+				MST : MST1
+					group:
+						Prim : Prim1

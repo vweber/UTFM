@@ -1,0 +1,668 @@
+module {UTFM.AG.AG}
+{}
+{
+----------------------------------------------------------------
+-- AG Helper Functions
+----------------------------------------------------------------
+import Data.List.Split(splitOn)
+import UU.Pretty
+
+transformType :: Type -> Syn_Type
+transformType r
+  = syn
+  where inh = Inh_Type {}
+        syn = wrap_Type (sem_Type r) inh
+
+addPP :: PP_Doc -> PP_Doc -> PP_Doc
+addPP p p' = p >-< p'
+
+evalNumber :: PP_Doc -> PP_Doc -> PP_Doc
+evalNumber p p' = p >-< "(eval" >#< p' >|< ")"
+
+checkSat :: PP_Doc -> PP_Doc
+checkSat p = p >-< pp "(check-sat)"
+
+selectInstances :: String -> [(String, [String])] -> [String]
+selectInstances t [] = []
+selectInstances t ((t',x):is) = if ((base ++ t) ==t') then x else (selectInstances t is)
+	where 
+		base = concatMap (++ ".") $ reverse $ tail $ reverse (splitOn "." t')
+
+zAssert :: PP_Doc -> PP_Doc
+zAssert p = pp "(assert " >#< p >#< pp ")"
+
+zParentName :: String -> String
+zParentName n = concatMap (++ ".") $ reverse $ tail $ reverse (splitOn "." n)
+
+zChainCardinality :: [String] -> String
+zChainCardinality (s:[]) = "(cardinality " ++ s ++")"
+zChainCardinality (s:ss) = "(+ (cardinality " ++ s ++ ") " ++ (zChainCardinality ss) ++ ")"
+
+zChainExists :: [String] -> String -> PP_Doc
+zChainExists [] _ = pp "false"
+zChainExists (s:[]) "" = pp s
+zChainExists (s:ss) "" = "(or" >#< s >#< (zChainExists ss "") >|< ")"
+zChainExists (s:[]) a = "(and" >#< s >#< s >|< "." >|< a >|< ")"
+zChainExists (s:ss) a = "(or (and" >#< s >#< s >|< "." >|< a >|< ")" >#< (zChainExists ss a) >|< ")"
+
+zChainForall :: [String] -> String -> PP_Doc
+zChainForall [] _ = pp "true"
+zChainForall (s:[]) "" = "(=>" >#< s >#< s >|< ")"
+zChainForall (s:ss) "" = "(and (=>" >#< s >#< s >|< ")" >#< (zChainForall ss "") >|< ")"
+zChainForall (s:[]) a = "(=>" >#< s >#< s >|< "." >|< a >|< ")"
+zChainForall (s:ss) a = "(and (=>" >#< s >#< s >|< "." >|< a >|< ")" >#< (zChainForall ss a) >|< ")"
+
+zChainSum :: [String] -> String -> PP_Doc
+zChainSum [] _ = pp (show 0)
+zChainSum (s:[]) a = "(* (cardinality" >#< s >|< ")" >#< s >|< "." >|< a >|< ")"
+zChainSum (s:ss) a = "(+ (* (cardinality" >#< s >|< ")" >#< s >|< "." >|< a >#< ")" >#< (zChainSum ss a) >|< ")"
+
+zChainMax :: [String] -> String -> PP_Doc
+zChainMax [] _ = pp (show 0)
+zChainMax (s:[]) a = "(* (cardinality" >#< s >|< ")" >#< s >|< "." >|< a >|< ")"
+zChainMax (s:ss) a = "(maxAttr (* (cardinality" >#< s >|< ")" >#< s >|< "." >|< a >|< ")" >#< (zChainMax ss a) >|< ")"
+
+zChainMin :: [String] -> String -> PP_Doc
+zChainMin [] _ = pp (show 0)
+zChainMin (s:[]) a = "(* (cardinality" >#< s >|< ")" >#< s >|< "." >|< a >|< ")"
+zChainMin (s:ss) a = "(minAttr (* (cardinality" >#< s >|< ")" >#< s >|< "." >|< a >|< ")" >#< (zChainMin ss a) >|< ")"
+}
+
+data Type
+	| Type root :: Factory
+
+type Factories = [Factory]
+data Factory
+	| Factory instancecardinality :: Cardinality typedeclaration :: Feature instances :: Features
+
+type Features = [Feature]
+data Feature 
+	| Parent name :: {String} selected :: Selected attributes :: Attributes constraints :: Constraints groupcardinality :: Cardinality group :: Factories base :: {String} delete :: {Bool}
+	| Child name :: {String} selected :: Selected attributes :: Attributes constraints :: Constraints base :: {String} delete :: {Bool}
+
+data Cardinality
+	| Cardinality lowerbound :: {Int} upperbound :: {Int} cardinalitytype :: {String}
+
+type Attributes = [Attribute]
+data Attribute 
+	| AttrInt name :: {String} value :: {Int} configured :: {Bool} generated :: {Bool} base :: {String}
+	| AttrReal name :: {String} value :: {Double} configured :: {Bool} generated :: {Bool} base :: {String}
+	| AttrBoolean name :: {String} value :: {Bool} configured :: {Bool} generated :: {Bool} base :: {String}
+	| AttrString name :: {String} value :: {String} configured :: {Bool} base :: {String}
+
+data Selected 
+	| U -- Undefined
+	| F -- False
+	| T -- True
+
+----------------------------------------------------------------
+-- Data structure Constraint Language
+----------------------------------------------------------------
+
+type Constraints = [Constraint]
+
+data Constraint 
+	| ConsBoolExpr x :: BoolExpr
+	| ConsBoolAssignExpr a :: {String} x :: BoolExpr
+	| ConsBoolAssignProp a :: {String} x :: BoolProp
+	| ConsArithAssignExpr a :: {String} x :: ArithExpr b :: {String}
+	| ConsArithAssignProp a :: {String} x :: ArithProp b :: {String}
+
+data BoolExpr
+	| BoolExprFormula x :: BoolFormula
+	| BoolExprProp x :: BoolProp
+	| BoolExprEq x :: BoolProp y :: BoolProp
+	| BoolExprIneq x :: BoolProp y :: BoolProp
+	| ArithExprEq x :: ArithProp y :: ArithProp
+	| ArithExprIneqSmaller x :: ArithProp y :: ArithProp
+	| ArithExprIneqSmallerEqual x :: ArithProp y :: ArithProp
+	| ArithExprIneqLarger x :: ArithProp y :: ArithProp
+	| ArithExprIneqLargerEqual x :: ArithProp y :: ArithProp
+	| ArithExprIneqNot x :: ArithProp y :: ArithProp
+
+data BoolFormula
+	| And x :: BoolProp y :: BoolProp
+	| Or x :: BoolProp y :: BoolProp
+	| Implies x :: BoolProp y :: BoolProp
+	| Not x :: BoolProp
+
+data BoolProp
+	| BoolPropOp x :: BoolOp
+	| BoolPropAttr x :: {String}
+	| BoolPropParentAttr x :: ParentRef
+	| BoolPropValue x :: {Bool}
+	| BoolPropExpr x :: BoolExpr
+
+data BoolOp
+	| ExistsF f :: {String}
+	| ExistsFO f :: {String} o :: BoolOp
+	| ExistsFA f :: {String} a :: {String}
+	| ExistsFE f :: {String} e :: BoolExpr
+	| ForallF f :: {String}
+	| ForallFO f :: {String} o :: BoolOp
+	| ForallFA f :: {String} a :: {String}
+	| ForallFE f :: {String} e :: BoolExpr
+
+data ArithExpr
+	| Add x :: ArithProp y :: ArithProp
+	| Subtract x :: ArithProp y :: ArithProp
+	| Multiply x :: ArithProp y :: ArithProp
+	| Divide x :: ArithProp y :: ArithProp
+
+data ArithProp
+	| ArithParent x :: ArithExpr
+	| ArithOperation x :: ArithOp
+	| ArithNum x :: Number
+	| ArithAttr x :: {String}
+	| ArithParentAttr x :: ParentRef
+
+data ArithOp
+	| SumFA f :: {String} a :: {String}
+	| SumFO f :: {String} a :: ArithOp
+	| SumFE f :: {String} e :: ArithExpr
+	| MaxFA f :: {String} a :: {String}
+	| MaxFO f :: {String} a :: ArithOp
+	| MaxFE f :: {String} e :: ArithExpr
+	| MaxPP x :: ArithProp y :: ArithProp
+	| MinFA f :: {String} a :: {String}
+	| MinFO f :: {String} a :: ArithOp
+	| MinFE f :: {String} e :: ArithExpr
+	| MinPP x :: ArithProp y :: ArithProp
+
+data ParentRef
+	| ParentAttrRef x :: {String}
+	| ParentChain x :: ParentRef
+
+data Number
+	| VInt x :: {Int}
+	| VReal x :: {Double}
+
+----------------------------------------------------------------
+-- Data structure Configuration
+----------------------------------------------------------------
+
+type Configurations	= [Configuration]
+data Configuration 	
+	| Configuration selected :: ConfSelected typedeclaration :: {String} name :: {String} attributes :: ConfAttributes children :: Configurations
+
+type ConfAttributes = [ConfAttribute]
+data ConfAttribute 
+	| ConfAttrInt name :: {String} value :: {Int}
+	| ConfAttrReal name :: {String} value :: {Double}
+	| ConfAttrBoolean name :: {String} value :: {Bool}
+	| ConfAttrString name :: {String} value :: {String}
+
+data ConfSelected 
+	| CU -- Undefined
+	| CF -- False
+	| CT -- True
+
+----------------------------------------------------------------
+-- Data structure Product
+----------------------------------------------------------------
+
+type Products = [Product]
+data Product 	
+	| Product typedeclaration :: {String} name :: {String} attributes :: ProdAttributes children :: Products
+
+type ProdAttributes = [ProdAttribute]
+data ProdAttribute 
+	| ProdAttrInt name :: {String} value :: {Int}
+	| ProdAttrReal name :: {String} value :: {Double}
+	| ProdAttrBoolean name :: {String} value :: {Bool}
+	| ProdAttrString name :: {String} value :: {String}
+
+----------------------------------------------------------------
+-- Z3 Attributes and Semantics Type Declaration
+----------------------------------------------------------------
+
+attr Type
+	syn z 				:: PP_Doc
+
+attr Factories Features Attributes 
+	syn zDecL 			:: {[PP_Doc]}
+	syn zAssL 			:: {[PP_Doc]}
+
+attr Factory Feature Cardinality Selected Attribute
+	syn zDec 			:: PP_Doc
+	syn zAss 			:: PP_Doc
+
+attr Factories
+	syn groupnames 		:: {[(String, [String])]}
+
+attr Factory 
+	syn instancenames 	:: {[(String, [String])]}
+
+attr Features
+	syn instancenames 	:: {[String]}
+
+attr Feature
+	syn basename		:: {String}
+
+attr Factories Factory Features Feature Attributes Attribute Cardinality Selected
+	inh parentname 		:: {String}
+
+attr Cardinality
+	inh instancenames 	:: {[String]}
+
+attr Selected
+	syn value 			:: {String}
+
+sem Type
+	| Type
+		lhs.z 		= pp "(define-fun cardinality ((x Bool)) Int (ite x 1 0))"
+						>-< pp "(define-fun maxAttr ((x Real) (y Real)) Real (ite (< x y) y x))"
+						>-< pp "(define-fun minAttr ((x Real) (y Real)) Real (ite (> x y) y x))"
+						>-< @root.zDec
+						>-< "(assert" >#< (head $ snd $ head @root.instancenames) >#< ")"
+						>-< @root.zAss
+		root.parentname = ""
+
+sem Factories
+	| Nil
+		lhs.groupnames							= []
+		lhs.zDecL 								= []
+		lhs.zAssL 								= []
+	| Cons
+		lhs.groupnames 							= @hd.instancenames ++ @tl.groupnames
+		lhs.zDecL 								= @hd.zDec : @tl.zDecL
+		lhs.zAssL 								= @hd.zAss : @tl.zAssL
+
+sem Factory
+	| Factory
+		lhs.zDec 	= @instancecardinality.zDec
+						>-< (if (null @instances.zDecL) then (empty) else (vlist @instances.zDecL))
+		lhs.zAss 	= @instancecardinality.zAss
+						>-< (if (null @instances.zAssL) then (empty) else (vlist @instances.zAssL))
+		lhs.instancenames 						= [(@typedeclaration.basename, @instances.instancenames)]
+		instancecardinality.parentname 			= @typedeclaration.basename
+		instancecardinality.instancenames 		= @instances.instancenames
+		instances.parentname 					= @lhs.parentname
+		typedeclaration.parentname 				= @lhs.parentname
+
+sem Features
+	| Nil
+		lhs.instancenames 						= []
+		lhs.zDecL 								= []
+		lhs.zAssL 								= []
+	| Cons
+		lhs.instancenames 						= @hd.basename : @tl.instancenames
+		lhs.zDecL 								= @hd.zDec : @tl.zDecL
+		lhs.zAssL 								= @hd.zAss : @tl.zAssL
+
+sem Feature
+	| Parent
+		lhs.zDec 	= "(declare-const" >#< @featurename >#< "Bool)"
+						>-< (if (null @attributes.zDecL) then (empty) else (vlist @attributes.zDecL))
+						>-< @groupcardinality.zDec
+						>-< (if (null @group.zDecL) then (empty) else (vlist @group.zDecL))
+		lhs.zAss 	= (if(@lhs.parentname == "") then (empty) else ("(assert (=>" >#< @featurename >#< @lhs.parentname >#< "))"))
+						>-< (case @selected.value of 
+								"true" -> ("(assert " >#< @featurename >#< ")")
+								"false" -> ("(assert (not " >#< @featurename >#< "))")
+								"undefined" -> (empty))
+						>-< (if (null @attributes.zAssL) then (empty) else (vlist @attributes.zAssL))
+						>-< (if (null @constraints.zAssL) then (empty) else (vlist @constraints.zAssL))
+						>-< @groupcardinality.zAss
+						>-< (if (null @group.zAssL) then (empty) else (vlist @group.zAssL))
+		loc.featurename 						= (if (@lhs.parentname == "") then @name else @lhs.parentname ++ "." ++ @name)
+		lhs.basename 							= @featurename
+		groupcardinality.instancenames 			= concat (map snd @group.groupnames)
+		groupcardinality.parentname 			= @featurename
+		attributes.parentname 					= @featurename
+		group.parentname 						= @featurename
+		selected.parentname 					= @featurename
+		constraints.names 						= (@featurename, @group.groupnames)
+	| Child
+		lhs.zDec 	= "(declare-const" >#< @featurename  >#< "Bool)"
+						>-< (if (null @attributes.zDecL) then (empty) else (vlist @attributes.zDecL))
+		lhs.zAss 	= "(assert (=>" >#< @featurename  >#< @lhs.parentname >#< "))"
+						>-< (case @selected.value of 
+								"true" -> ("(assert " >#< @featurename  >#< ")")
+								"false" -> ("(assert (not " >#< @featurename  >#< "))")
+								"undefined" -> (empty))
+						>-< (if (null @attributes.zAssL) then (empty) else (vlist @attributes.zAssL))
+		loc.featurename 						= (if (@lhs.parentname == "") then @name else @lhs.parentname ++ "." ++ @name)
+		lhs.basename 							= @featurename
+		attributes.parentname 					= @featurename 
+		selected.parentname						= @featurename 
+		constraints.names 						= (@featurename ,[("?",["???"])])
+
+sem Attributes
+	| Nil
+		lhs.zDecL 	= []
+		lhs.zAssL 	= []
+	| Cons
+		hd.parentname 							= @lhs.parentname
+		tl.parentname 							= @lhs.parentname
+		lhs.zDecL 								= @hd.zDec : @tl.zDecL
+		lhs.zAssL 								= @hd.zAss : @tl.zAssL
+
+sem Attribute
+	| AttrInt
+		lhs.zDec 	= "(declare-const" >#< @lhs.parentname >|< "." >|< @name >#< "Int)"
+		lhs.zAss 	= if (@configured)
+						then ("(assert (=" >#< @lhs.parentname >|< "." >|< @name >#< @value >#< "))")
+						else empty
+	| AttrReal
+		lhs.zDec 	= "(declare-const" >#< @lhs.parentname >|< "." >|< @name >#< "Real)"
+		lhs.zAss 	= if (@configured)
+						then ("(assert (=" >#< @lhs.parentname >|< "." >|< @name >#< pp (show @value) >#< "))")
+						else empty
+	| AttrString
+		lhs.zDec 	= "(declare-const" >#< @lhs.parentname >|< "." >|< @name >#< "String)"
+		lhs.zAss 	= if (@configured)
+						then ("(assert (=" >#< @lhs.parentname >|< "." >|< @name >#< @value >#< "))")
+						else empty
+	| AttrBoolean
+		lhs.zDec 	= "(declare-const" >#< @lhs.parentname >|< "." >|< @name >#< "Bool)"
+		lhs.zAss 	= if (@configured) 
+						then ("(assert (=" >#< @lhs.parentname >|< "." >|< @name >#< (if(@value) then "true" else "false") >#< "))")
+						else empty
+
+sem Cardinality
+	| Cardinality
+		lhs.zDec 	= "(declare-const" >#< @lhs.parentname >|< "." >|< @cardinalitytype >|< "Cardinality Int)"
+		lhs.zAss 	= "(assert (=" >#< @lhs.parentname >|< "." >|< @cardinalitytype >|< "Cardinality"
+							>#< (if (null @lhs.instancenames) 
+									then (pp "0") 
+									else (pp (zChainCardinality @lhs.instancenames)))
+							>#< "))"
+						>-< "(assert (>=" >#< @lhs.parentname >|< "." >|< @cardinalitytype >|< "Cardinality " >#< (show @lowerbound) >#< "))" 
+						>-< "(assert (<=" >#< @lhs.parentname >|< "." >|< @cardinalitytype >|< "Cardinality " >#< (show @upperbound) >#< "))"
+sem Selected
+	| T
+		lhs.zDec 	= empty
+		lhs.zAss 	= "(assert" >#< @lhs.parentname >#< ")"
+		lhs.value 	= "true"
+	| F
+		lhs.zDec 	= empty
+		lhs.zAss 	= "(assert (not " >#< @lhs.parentname >#< "))"
+		lhs.value 	= "false"
+	| U
+		lhs.zDec 	= empty
+		lhs.zAss 	= empty
+		lhs.value 	= "undefined"
+
+----------------------------------------------------------------
+-- Z3 Attributes and Semantics Constraint Language
+----------------------------------------------------------------
+
+attr Constraints
+	syn zAssL 			:: {[PP_Doc]}
+	inh names 			:: {(String, [(String, [String])])}
+
+attr Constraint BoolExpr BoolFormula BoolProp BoolOp ParentRef
+		ArithExpr ArithProp ArithOp
+	syn zAss 			:: PP_Doc
+	inh names 			:: {(String, [(String, [String])])}
+
+attr Number
+	syn zAss 			:: PP_Doc
+
+sem Constraints
+	| Nil
+		lhs.zAssL 	= []
+	| Cons
+		lhs.zAssL 	= (zAssert @hd.zAss) : @tl.zAssL
+		hd.names 	= @lhs.names
+
+sem Constraint
+	| ConsBoolExpr 
+		lhs.zAss 	= @x.zAss
+		x.names 	= @lhs.names
+	| ConsBoolAssignExpr
+		lhs.zAss 	= "(=" >#< (fst @lhs.names) >|< "." >|< @a >#< @x.zAss >#< ")"
+		x.names 	= @lhs.names
+	| ConsBoolAssignProp
+		lhs.zAss 	= "(=" >#< (fst @lhs.names) >|< "." >|< @a >#< @x.zAss >#< ")"
+		x.names 	= @lhs.names
+	| ConsArithAssignExpr
+		lhs.zAss 	= "(=" >#< (fst @lhs.names) >|< "." >|< @a >#< @x.zAss >#< ")"
+		x.names 	= @lhs.names
+	| ConsArithAssignProp
+		lhs.zAss 	= "(=" >#< (fst @lhs.names) >|< "." >|< @a >#< @x.zAss >#< ")"
+		x.names 	= @lhs.names
+
+sem BoolExpr
+	| BoolExprFormula
+		lhs.zAss 	= @x.zAss
+		x.names 	= @lhs.names
+	| BoolExprProp
+		lhs.zAss 	= @x.zAss
+		x.names 	= @lhs.names
+	| BoolExprEq
+		lhs.zAss 	= "(=" >#< @x.zAss >#< @y.zAss >#< ")"
+		x.names 	= @lhs.names
+		y.names 	= @lhs.names
+	| BoolExprIneq
+		lhs.zAss 	= "(=" >#< @x.zAss >#< "(not" >#< @y.zAss >#< "))"
+		x.names 	= @lhs.names
+		y.names 	= @lhs.names
+	| ArithExprEq
+		lhs.zAss 	= "(=" >#< @x.zAss >#< @y.zAss >#< ")"
+		x.names 	= @lhs.names
+		y.names 	= @lhs.names
+	| ArithExprIneqSmaller
+		lhs.zAss 	= "(<" >#< @x.zAss >#< @y.zAss >#< ")"
+		x.names 	= @lhs.names
+		y.names 	= @lhs.names
+	| ArithExprIneqSmallerEqual
+		lhs.zAss 	= "(<=" >#< @x.zAss >#< @y.zAss >#< ")"
+		x.names 	= @lhs.names
+		y.names 	= @lhs.names
+	| ArithExprIneqLarger
+		lhs.zAss 	= "(>" >#< @x.zAss >#< @y.zAss >#< ")"
+		x.names 	= @lhs.names
+		y.names 	= @lhs.names
+	| ArithExprIneqLargerEqual
+		lhs.zAss 	= "(>=" >#< @x.zAss >#< @y.zAss >#< ")"
+		x.names 	= @lhs.names
+		y.names 	= @lhs.names
+	| ArithExprIneqNot
+		lhs.zAss 	= "(not (=" >#< @x.zAss >#< @y.zAss >#< "))"
+		x.names 	= @lhs.names
+		y.names 	= @lhs.names
+
+sem BoolFormula
+	| And
+		lhs.zAss 	= "(and" >#< @x.zAss >#< @y.zAss >#< ")"
+		x.names  	= @lhs.names
+		y.names  	= @lhs.names
+	| Or
+		lhs.zAss 	= "(or" >#< @x.zAss >#< @y.zAss >#< ")"
+		x.names  	= @lhs.names
+		y.names  	= @lhs.names
+	| Implies
+		lhs.zAss 	= "(=>" >#< @x.zAss >#< @y.zAss >#< ")"
+		x.names  	= @lhs.names
+		y.names  	= @lhs.names
+	| Not
+		lhs.zAss 	= "(not" >#< @x.zAss >#< ")"
+		x.names  	= @lhs.names
+
+sem BoolProp
+	| BoolPropOp
+		lhs.zAss 	= @x.zAss
+		x.names 	= @lhs.names
+	| BoolPropAttr
+		lhs.zAss 	= (fst @lhs.names) >|< "." >|< @x
+	| BoolPropParentAttr
+		lhs.zAss 	= @x.zAss
+	| BoolPropValue 
+		lhs.zAss 	= (fst @lhs.names) >|< "." >|< (if(@x) then "true" else "false")
+	| BoolPropExpr
+		lhs.zAss 	= @x.zAss
+		x.names 	= @lhs.names
+
+sem BoolOp
+	| ExistsF
+		lhs.zAss 	= zChainExists (selectInstances (show @f) (snd @lhs.names)) ""
+	| ExistsFO
+		lhs.zAss 	= (empty)
+		o.names 	= @lhs.names
+	| ExistsFE
+		lhs.zAss 	= (empty)
+		e.names 	= @lhs.names
+	| ExistsFA
+		lhs.zAss 	= zChainExists (selectInstances @f (snd @lhs.names)) @a
+	| ForallF 
+		lhs.zAss 	= pp "true"
+	| ForallFO
+		lhs.zAss 	= (empty)
+		o.names 	= @lhs.names
+	| ForallFE
+		lhs.zAss 	= (empty)
+		e.names 	= @lhs.names
+	| ForallFA
+		lhs.zAss 	= zChainForall (selectInstances @f (snd @lhs.names)) @a
+
+sem ArithExpr
+	| Add
+		lhs.zAss 	= "(+" >#< @x.zAss >#< @y.zAss >#< ")"
+		x.names  	= @lhs.names
+		y.names  	= @lhs.names
+	| Subtract
+		lhs.zAss 	= "(-" >#< @x.zAss >#< @y.zAss >#< ")"
+		x.names  	= @lhs.names
+		y.names  	= @lhs.names
+	| Multiply
+		lhs.zAss 	= "(*" >#< @x.zAss >#< @y.zAss >#< ")"
+		x.names  	= @lhs.names
+		y.names  	= @lhs.names
+	| Divide
+		lhs.zAss 	= "(/" >#< @x.zAss >#< @y.zAss >#< ")"
+		x.names  	= @lhs.names
+		y.names  	= @lhs.names
+
+sem ArithProp
+	| ArithParent
+		lhs.zAss 	= @x.zAss
+		x.names  	= @lhs.names
+	| ArithOperation
+		lhs.zAss 	= @x.zAss
+		x.names  	= @lhs.names 
+	| ArithNum
+		lhs.zAss 	= @x.zAss
+	| ArithAttr
+		lhs.zAss 	= (fst @lhs.names) >|< "." >|< @x
+	| ArithParentAttr
+		lhs.zAss 	= @x.zAss
+		x.names  	= @lhs.names
+
+sem ArithOp
+	| SumFA
+		lhs.zAss 	= zChainSum (selectInstances @f (snd @lhs.names)) @a
+	| SumFO
+		lhs.zAss 	= (empty)
+		a.names 	= @lhs.names
+	| SumFE
+		lhs.zAss 	= (empty)
+		e.names 	= @lhs.names
+	| MaxFA
+		lhs.zAss 	= zChainMax (selectInstances @f (snd @lhs.names)) @a
+	| MaxFO
+		lhs.zAss 	= (empty)
+		a.names 	= @lhs.names
+	| MaxFE
+		lhs.zAss 	= (empty)
+		e.names 	= @lhs.names
+	| MaxPP
+		lhs.zAss 	= "(maxAttr" >#< @x.zAss >#< @y.zAss >#< ")"
+		x.names 	= @lhs.names
+		y.names 	= @lhs.names
+	| MinFA
+		lhs.zAss 	= zChainMin (selectInstances @f (snd @lhs.names)) @a
+	| MinFO
+		lhs.zAss 	= (empty)
+		a.names 	= @lhs.names
+	| MinFE
+		lhs.zAss 	= (empty)
+		e.names 	= @lhs.names
+	| MinPP
+		lhs.zAss 	= "(minAttr" >#< @x.zAss >#< @y.zAss >#< ")"
+		x.names 	= @lhs.names
+		y.names 	= @lhs.names
+
+sem ParentRef
+	| ParentAttrRef
+		lhs.zAss 	= (zParentName (fst @lhs.names)) >|< "." >|< @x
+	| ParentChain
+		lhs.zAss 	= @x.zAss
+		x.names 	= ((zParentName (fst @lhs.names)), [])
+
+sem Number
+	| VInt
+		lhs.zAss 	= pp (show @x)
+	| VReal
+		lhs.zAss 	= pp (show @x)
+
+----------------------------------------------------------------
+-- Pretty Printing Configuration
+----------------------------------------------------------------
+attr Type Factory Feature Attribute Selected
+	syn conf 	:: PP_Doc
+
+attr Factories Features Attributes
+	syn confL 	:: {[PP_Doc]}
+
+attr Features Feature
+	inh typename :: {String}
+
+attr Feature 
+	syn name :: {String}
+
+sem Type 
+	| Type 
+		lhs.conf	= @root.conf
+
+sem Factories Features
+	| Nil
+		lhs.confL 	= []
+	| Cons
+		lhs.confL 	= @hd.conf : @tl.confL
+
+sem Features
+	| Cons
+		hd.typename = @lhs.typename
+		tl.typename = @lhs.typename
+
+sem Factory
+	| Factory 
+		lhs.conf 	= vlist @instances.confL
+		typedeclaration.typename 	= ""
+		instances.typename 			= @typedeclaration.name
+
+sem Feature 
+	| Parent 	
+		lhs.conf 	= @selected.conf >|< @lhs.typename >|< ":" >|< @name
+						>-< (if (null @attributes.confL) then (empty) else (indent 2 ("attributes: {" >-< (indent 2 (vlist @attributes.confL)) >-< "}" )))
+						>-< (indent 2 ("group: {" >-< (indent 2 (vlist @group.confL)) >-< "}"))
+		lhs.name 	= @name
+	| Child 	
+		lhs.conf 	= @selected.conf >|< @lhs.typename >|< ":" >|< @name
+		lhs.name 	= @name
+
+sem Attributes
+	| Nil
+		lhs.confL 	= []
+	| Cons
+		lhs.confL 	= @hd.conf : @tl.confL
+
+sem Attribute
+	| AttrBoolean
+		lhs.conf 	= if(@configured && (not @generated)) then (@name >#< "=" >#< (if(@value) then "true" else "false")) else (empty)
+	| AttrInt
+		lhs.conf 	= if(@configured && (not @generated)) then (@name >#< "=" >#< pp (show @value)) else (empty)
+	| AttrReal
+		lhs.conf 	= if(@configured && (not @generated)) then (@name >#< "=" >#< pp (show @value)) else (empty)
+	| AttrString
+		lhs.conf 	= if(@configured) then (@name >#< "=" >#< @value) else (empty)
+
+sem Selected
+	| T
+		lhs.conf	= (empty)
+	| F
+		lhs.conf 	= pp "(false) "
+	| U
+		lhs.conf 	= pp "(undefined) "

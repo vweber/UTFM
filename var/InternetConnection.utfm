@@ -1,0 +1,26 @@
+[1..1] InternetConnection
+	attributes:
+		Int price;
+		Bool option;
+		String connectionName;
+	constraints:
+		price = 20 + (sum(Powerline.price) + (sum(ADSL.price) + sum(Wireless.price)));
+	group [1..1]:
+		[0..1] PowerLine
+			attributes:
+				Int price;
+			constraints:
+				price >= 100;
+				price <= 200;
+		[0..1] ADSL
+			attributes:
+				Int price;
+			constraints:
+				price >= 100;
+				price <= 200;
+		[0..1] Wireless
+			attributes:
+				Int price;
+			constraints:
+				price >= 150;
+				price <= 250;
