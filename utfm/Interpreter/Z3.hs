@@ -48,8 +48,9 @@ performChoice z (ChoiceArithAttr n)
 zQuery :: PP_Doc -> IO (String, String)
 zQuery z
 	= do
-			writeFile "./tmp/test.smt2" (disp z 80 "")
-			s <- readProcess "./lib/z3-4.3.0-x64/bin/z3" ["./tmp/test.smt2"] ""
+			l <- getRandomList
+			writeFile ("./tmp/test"++ show (head l) ++".smt2") (disp z 80 "")
+			s <- readProcess "./lib/z3-4.3.0-x64/bin/z3" [("./tmp/test"++ show (head l) ++".smt2")] ""
 			return $ span (not.isSpace) s
 
 zQueryBool :: PP_Doc -> IO Bool

@@ -35,8 +35,8 @@ scanBlock p ('t' : 'r' : 'u' : 'e' : r)
 	= reserved "true" p : scanBlock (advc 4 p) r
 scanBlock p ('f' : 'a' : 'l' : 's' : 'e' : r)
 	= reserved "false" p : scanBlock (advc 5 p) r
-scanBlock p ('u' : 'n' : 'd' : 'e' : 'f' : 'i' : 'n' : 'e' : 'd' : r)
- 	= reserved "undefined" p : scanBlock (advc 9 p) r
+scanBlock p ('u' : 'n' : 'd' : 'e' : 'c' : 'i' : 'd' : 'e' : 'd' : r)
+ 	= reserved "undecided" p : scanBlock (advc 9 p) r
 scanBlock p ('.' : '.' : r)
 	= reserved ".." p : scanBlock (advc 2 p) r
 
@@ -53,6 +53,10 @@ scanBlock p ('f' : 'o' : 'r' : 'a' : 'l' : 'l' : r)
 	= reserved "forall" p : scanBlock (advc 6 p) r
 scanBlock p ('i' : 'm' : 'p' : 'l' : 'i' : 'e' : 's' : r)
 	= reserved "implies" p : scanBlock (advc 7 p) r
+scanBlock p ('=' : '=' : r)
+	= reserved "==" p : scanBlock (advc 2 p) r
+scanBlock p ('!' : '=' : r)
+	= reserved "!=" p : scanBlock (advc 2 p) r
 scanBlock p ('>' : '=' : r)
 	= reserved ">=" p : scanBlock (advc 2 p) r
 scanBlock p ('<' : '=' : r)

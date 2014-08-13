@@ -270,7 +270,7 @@ pConfigurationSelected :: Parser Token ConfSelected
 pConfigurationSelected
 	= 	CT <$ (pParens (pKey "true"))
 	<|> CF <$ (pParens (pKey "false"))
-	<|> CU <$ (pParens (pKey "undefined"))
+	<|> CU <$ (pParens (pKey "undecided"))
 
 ----------------------------------------------------------------
 -- UTFM Parse Product

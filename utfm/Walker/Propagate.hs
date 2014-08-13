@@ -35,14 +35,14 @@ cFeature (Parent n T a c _ g _ _) = (cFactories g) ++ (cAttributes a) ++ (cConst
 cFeature (Parent _ F _ _ _ _ _ _) = []
 cFeature (Parent n U a c _ g b _) = f' ++ (cAttributes a) ++ (cConstraints c) ++ (cFactories g)
 	where
-		f' = [(ChoiceBool (b++"."++n) ((True, "(assert (=" >#< b >|< "." >|< n >#< "true))")
+		f' = [(ChoiceBool (b++"."++n) ((True, "(assert" >#< b >|< "." >|< n >|< ")")
 												,(False, "(assert (=" >#< b >|< "." >|< n >#< "false))")))]
 cFeature (Child n T a c _ _) = (cAttributes a) ++ (cConstraints c)
 cFeature (Child _ F _ _ _ _) = []
 cFeature (Child n U a c b _) = f' ++ (cAttributes a) ++ (cConstraints c)
 	where
-		f' = [(ChoiceBool n ((True, "(assert (=" >#< b >|< "." >|< n >#< "true))")
-												,(False, "(assert (=" >#< b >|< "." >|< n >#< "false))")))]
+		f' = [(ChoiceBool n ((True, "(assert" >#< b >|< "." >|< n >|< ")")
+												,(False, "(assert (not" >#< b >|< "." >|< n >|< "))")))]
 
 cAttributes :: Attributes -> Choices
 cAttributes [] = []
@@ -51,8 +51,8 @@ cAttributes (a:as) = (cAttribute a) ++ (cAttributes as)
 cAttribute :: Attribute -> Choices
 cAttribute (AttrBoolean n v c g b) = if (not c) 
 									then [(ChoiceBoolAttr (b ++ "." ++ n)
-													((True, "(assert (=" >#< b >|< "." >|< n >#< "true))")
-													,(False, "(assert (=" >#< b >|< "." >|< n >#< "false))")))]
+													((True, "(assert" >#< b >|< "." >|< n >|< ")")
+													,(False, "(assert (not" >#< b >|< "." >|< n >|< "))")))]
 									else []
 cAttribute _ = []
 

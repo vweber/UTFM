@@ -14,19 +14,22 @@ interpretTree True False propagate unfoldT full (Just tree, [])
 			l <- getRandomList
 			(tree', errs) <- validateTree ((Just (unfold tree l True)), [])
 			let tree'' = if(unfoldT) then tree' else (deUnfold tree')
-			interpretTree False False propagate False full (tree'', errs)
+			interpretTree False False propagate unfoldT full (tree'', errs)
 
 interpretTree False True False False False (Just tree, []) 
 	= do 
 			(tree', errs) <- validateTree (Just tree, [])
 			interpretTree False False False False False (tree', errs)
 
-interpretTree False False True False False (Just tree, []) 
+interpretTree False False True unfoldT False (Just tree, []) 
 	= do 
-			let choices = getChoices tree
-			decisions <- validateChoices tree choices
-			let tree' =  setDecisions tree decisions
-			return (Just tree', [])
+			l <- getRandomList
+			let tree' = if(unfoldT) then tree else (unfold tree l True)
+			let choices = getChoices (unfold tree' l True)
+			decisions <- validateChoices tree' choices
+			let tree'' =  setDecisions tree' decisions
+			let tree''' = if(unfoldT) then (Just tree'') else (deUnfold (Just tree''))
+			return (tree''', [])
 
 -- TODO: Add error messaging if not valid product but valid conf, add function something like addError
 interpretTree False False False False True (Just tree, []) 

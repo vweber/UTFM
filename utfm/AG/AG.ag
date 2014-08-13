@@ -32,7 +32,9 @@ zAssert :: PP_Doc -> PP_Doc
 zAssert p = pp "(assert " >#< p >#< pp ")"
 
 zParentName :: String -> String
-zParentName n = concatMap (++ ".") $ reverse $ tail $ reverse (splitOn "." n)
+zParentName n = if(n' == "") then n' else (reverse $ tail $ reverse $ n')
+	where
+		n' = concatMap (++ ".") $ reverse $ tail $ reverse (splitOn "." n)
 
 zChainCardinality :: [String] -> String
 zChainCardinality (s:[]) = "(cardinality " ++ s ++")"
@@ -91,7 +93,7 @@ data Attribute
 	| AttrString name :: {String} value :: {String} configured :: {Bool} base :: {String}
 
 data Selected 
-	| U -- Undefined
+	| U -- Undecided
 	| F -- False
 	| T -- True
 
@@ -193,7 +195,7 @@ data ConfAttribute
 	| ConfAttrString name :: {String} value :: {String}
 
 data ConfSelected 
-	| CU -- Undefined
+	| CU -- Undecided
 	| CF -- False
 	| CT -- True
 
@@ -254,7 +256,6 @@ sem Type
 						>-< pp "(define-fun maxAttr ((x Real) (y Real)) Real (ite (< x y) y x))"
 						>-< pp "(define-fun minAttr ((x Real) (y Real)) Real (ite (> x y) y x))"
 						>-< @root.zDec
-						>-< "(assert" >#< (head $ snd $ head @root.instancenames) >#< ")"
 						>-< @root.zAss
 		root.parentname = ""
 
@@ -300,7 +301,7 @@ sem Feature
 						>-< (case @selected.value of 
 								"true" -> ("(assert " >#< @featurename >#< ")")
 								"false" -> ("(assert (not " >#< @featurename >#< "))")
-								"undefined" -> (empty))
+								"undecided" -> (empty))
 						>-< (if (null @attributes.zAssL) then (empty) else (vlist @attributes.zAssL))
 						>-< (if (null @constraints.zAssL) then (empty) else (vlist @constraints.zAssL))
 						>-< @groupcardinality.zAss
@@ -320,8 +321,9 @@ sem Feature
 						>-< (case @selected.value of 
 								"true" -> ("(assert " >#< @featurename  >#< ")")
 								"false" -> ("(assert (not " >#< @featurename  >#< "))")
-								"undefined" -> (empty))
+								"undecided" -> (empty))
 						>-< (if (null @attributes.zAssL) then (empty) else (vlist @attributes.zAssL))
+						>-< (if (null @constraints.zAssL) then (empty) else (vlist @constraints.zAssL))
 		loc.featurename 						= (if (@lhs.parentname == "") then @name else @lhs.parentname ++ "." ++ @name)
 		lhs.basename 							= @featurename
 		attributes.parentname 					= @featurename 
@@ -350,10 +352,8 @@ sem Attribute
 						then ("(assert (=" >#< @lhs.parentname >|< "." >|< @name >#< pp (show @value) >#< "))")
 						else empty
 	| AttrString
-		lhs.zDec 	= "(declare-const" >#< @lhs.parentname >|< "." >|< @name >#< "String)"
-		lhs.zAss 	= if (@configured)
-						then ("(assert (=" >#< @lhs.parentname >|< "." >|< @name >#< @value >#< "))")
-						else empty
+		lhs.zDec 	= empty
+		lhs.zAss 	= empty
 	| AttrBoolean
 		lhs.zDec 	= "(declare-const" >#< @lhs.parentname >|< "." >|< @name >#< "Bool)"
 		lhs.zAss 	= if (@configured) 
@@ -368,8 +368,14 @@ sem Cardinality
 									then (pp "0") 
 									else (pp (zChainCardinality @lhs.instancenames)))
 							>#< "))"
-						>-< "(assert (>=" >#< @lhs.parentname >|< "." >|< @cardinalitytype >|< "Cardinality " >#< (show @lowerbound) >#< "))" 
-						>-< "(assert (<=" >#< @lhs.parentname >|< "." >|< @cardinalitytype >|< "Cardinality " >#< (show @upperbound) >#< "))"
+						>-< "(assert (=>" >#< (if ((zParentName @lhs.parentname) == "") 
+									then "true" 
+									else (if(@cardinalitytype == "Instance") then (zParentName @lhs.parentname) else @lhs.parentname))
+								>#< "(>=" >#< @lhs.parentname >|< "." >|< @cardinalitytype >|< "Cardinality " >#< (show @lowerbound) >#< ")))" 
+						>-< "(assert (=>" >#< (if ((zParentName @lhs.parentname) == "") 
+									then "true" 
+									else (if(@cardinalitytype == "Instance") then (zParentName @lhs.parentname) else @lhs.parentname))
+								>#< "(<=" >#< @lhs.parentname >|< "." >|< @cardinalitytype >|< "Cardinality " >#< (show @upperbound) >#< ")))"
 sem Selected
 	| T
 		lhs.zDec 	= empty
@@ -382,7 +388,7 @@ sem Selected
 	| U
 		lhs.zDec 	= empty
 		lhs.zAss 	= empty
-		lhs.value 	= "undefined"
+		lhs.value 	= "undecided"
 
 ----------------------------------------------------------------
 -- Z3 Attributes and Semantics Constraint Language
@@ -409,7 +415,7 @@ sem Constraints
 
 sem Constraint
 	| ConsBoolExpr 
-		lhs.zAss 	= @x.zAss
+		lhs.zAss 	= "(=>" >#< (fst @lhs.names) >#< @x.zAss >|< ")"
 		x.names 	= @lhs.names
 	| ConsBoolAssignExpr
 		lhs.zAss 	= "(=" >#< (fst @lhs.names) >|< "." >|< @a >#< @x.zAss >#< ")"
@@ -497,7 +503,7 @@ sem BoolProp
 
 sem BoolOp
 	| ExistsF
-		lhs.zAss 	= zChainExists (selectInstances (show @f) (snd @lhs.names)) ""
+		lhs.zAss 	= zChainExists (selectInstances @f (snd @lhs.names)) ""
 	| ExistsFO
 		lhs.zAss 	= (empty)
 		o.names 	= @lhs.names
@@ -612,6 +618,9 @@ attr Features Feature
 attr Feature 
 	syn name :: {String}
 
+attr Attributes Attribute
+	syn print :: {Bool}
+
 sem Type 
 	| Type 
 		lhs.conf	= @root.conf
@@ -636,28 +645,35 @@ sem Factory
 sem Feature 
 	| Parent 	
 		lhs.conf 	= @selected.conf >|< @lhs.typename >|< ":" >|< @name
-						>-< (if (null @attributes.confL) then (empty) else (indent 2 ("attributes: {" >-< (indent 2 (vlist @attributes.confL)) >-< "}" )))
-						>-< (indent 2 ("group: {" >-< (indent 2 (vlist @group.confL)) >-< "}"))
+						>-< (if (not @attributes.print) then (empty) else (indent 2 ("attributes: {" >-< (indent 2 (vlist @attributes.confL)) >-< "}" )))
+						>-< (if (null @group.confL) then (empty) else (indent 2 ("group: {" >-< (indent 2 (vlist @group.confL)) >-< "}")))
 		lhs.name 	= @name
 	| Child 	
 		lhs.conf 	= @selected.conf >|< @lhs.typename >|< ":" >|< @name
+						>-< (if (not @attributes.print) then (empty) else (indent 2 ("attributes: {" >-< (indent 2 (vlist @attributes.confL)) >-< "}" )))
 		lhs.name 	= @name
 
 sem Attributes
 	| Nil
 		lhs.confL 	= []
+		lhs.print 	= False
 	| Cons
 		lhs.confL 	= @hd.conf : @tl.confL
+		lhs.print 	= @hd.print || @tl.print
 
 sem Attribute
 	| AttrBoolean
-		lhs.conf 	= if(@configured && (not @generated)) then (@name >#< "=" >#< (if(@value) then "true" else "false")) else (empty)
+		lhs.conf 	= if(@configured && (not @generated)) then (@name >#< "=" >#< (if(@value) then "true" else "false") >|< ";") else (empty)
+		lhs.print 	= if(@configured && (not @generated)) then True else False
 	| AttrInt
-		lhs.conf 	= if(@configured && (not @generated)) then (@name >#< "=" >#< pp (show @value)) else (empty)
+		lhs.conf 	= if(@configured && (not @generated)) then (@name >#< "=" >#< pp (show @value) >|< ";") else (empty)
+		lhs.print 	= if(@configured && (not @generated)) then True else False
 	| AttrReal
-		lhs.conf 	= if(@configured && (not @generated)) then (@name >#< "=" >#< pp (show @value)) else (empty)
+		lhs.conf 	= if(@configured && (not @generated)) then (@name >#< "=" >#< pp (show @value) >|< ";") else (empty)
+		lhs.print 	= if(@configured && (not @generated)) then True else False
 	| AttrString
-		lhs.conf 	= if(@configured) then (@name >#< "=" >#< @value) else (empty)
+		lhs.conf 	= if(@configured) then (@name >#< "=" >#< "\"" >|< @value >|< "\"" >|< ";") else (empty)
+		lhs.print 	= if(@configured) then True else False
 
 sem Selected
 	| T
@@ -665,4 +681,4 @@ sem Selected
 	| F
 		lhs.conf 	= pp "(false) "
 	| U
-		lhs.conf 	= pp "(undefined) "
+		lhs.conf 	= pp "(undecided) "

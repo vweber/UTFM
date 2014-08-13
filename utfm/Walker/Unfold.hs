@@ -49,7 +49,7 @@ uFeature c@(Child _ _ _ _ _ _) l d = (c, l)
 
 unfoldInstances :: Feature -> Features -> Int -> Int -> [Int] -> Bool -> (Features, [Int])
 unfoldInstances tp is i max l d 
-	= if (i == max) 
+	= if (i >= max) 
 			then (uFeatures is l d)
 			else (is' ++ [i'], l'')
 	where
@@ -57,7 +57,9 @@ unfoldInstances tp is i max l d
 		(is', l'') = unfoldInstances tp is (i+1) max l' d
 
 newInstance :: Feature -> Int -> Int -> [Int] -> Bool -> (Feature, [Int])
-newInstance (Parent n _ a _ c g b _) i max l d = ((Parent (n ++ show (head l)) U a [] c g b True), tail l)
+newInstance (Parent n _ a _ c g b _) i max l d = ((Parent (n ++ show (head l)) U a [] c g' b True), tail l')
+	where
+		(g', l') = uFactories g l d
 newInstance (Child n _ a _ b _) i max l d = ((Child (n ++ show (head l)) U a [] b True), tail l)
 
 getMaxCardinality :: Cardinality -> Int
